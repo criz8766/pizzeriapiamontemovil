@@ -29,6 +29,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var nsdManager: NsdManager
     private val SERVICE_TYPE = "_http._tcp."
     private var isServerFound = false
+    private var discoveryListener: NsdManager.DiscoveryListener? = null
+    private var resolveListener: NsdManager.ResolveListener? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -48,20 +50,28 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupRecyclerView() {
-        ingredienteAdapter = IngredienteAdapter(emptyList()) { ingrediente ->
-            showEditDialog(ingrediente)
-        }
+        ingredienteAdapter = IngredienteAdapter(
+            emptyList(),
+            onEditClick = { ingrediente ->
+                showEditDialog(ingrediente)
+            },
+            onBuyClick = { ingrediente ->
+                viewModel.updateIngrediente(ingrediente)
+            }
+        )
         recyclerView.adapter = ingredienteAdapter
         recyclerView.layoutManager = LinearLayoutManager(this)
     }
 
     private fun setupSwipeToRefresh() {
         swipeRefreshLayout.setOnRefreshListener {
-            viewModel.clearData()
-            isServerFound = false
-            viewModel.stopHeartbeat()
-            stopDiscovery()
-            discoverServices()
+            // Cuando el usuario desliza, forzamos una nueva búsqueda o recarga
+            if (isServerFound) {
+                viewModel.fetchIngredientes()
+            } else {
+                stopDiscovery()
+                discoverServices()
+            }
             swipeRefreshLayout.isRefreshing = false
         }
     }
@@ -74,88 +84,79 @@ class MainActivity : AppCompatActivity() {
             }
         }
         viewModel.isLoading.observe(this) { isLoading ->
-            progressBar.visibility = if (isLoading) View.VISIBLE else View.GONE
-            if (isLoading) statusText.visibility = View.GONE
+            if (isLoading) {
+                showStatusMessage("Cargando...", showList = false)
+            }
         }
         viewModel.error.observe(this) { errorMessage ->
             Toast.makeText(this, errorMessage, Toast.LENGTH_LONG).show()
             showStatusMessage("Error de conexión. Desliza para reintentar.")
+            isServerFound = false // Marcamos que perdimos el servidor
         }
-        // --- ¡NUEVO! Observa la pérdida de conexión desde el ViewModel ---
-        viewModel.serverConnectionLost.observe(this) { isLost ->
-            if (isLost) {
-                isServerFound = false
-                viewModel.clearData()
-                showStatusMessage("Conexión perdida. Buscando de nuevo...")
-                stopDiscovery()
-                discoverServices()
+    }
+
+    private fun initializeDiscoveryListener() {
+        if (discoveryListener == null) {
+            discoveryListener = object : NsdManager.DiscoveryListener {
+                override fun onDiscoveryStarted(regType: String) { Log.d("NSD", "Búsqueda de servicios iniciada.") }
+                override fun onServiceFound(service: NsdServiceInfo) {
+                    if (!isServerFound && service.serviceType.contains(SERVICE_TYPE) && service.serviceName.contains("Piamonte API Server")) {
+                        Log.d("NSD", "Servidor Piamonte encontrado: ${service.serviceName}")
+                        initializeResolveListener()
+                        nsdManager.resolveService(service, resolveListener)
+                    }
+                }
+                override fun onServiceLost(service: NsdServiceInfo) {
+                    Log.e("NSD", "Anuncio de servicio perdido: ${service.serviceName}")
+                    if (isServerFound && service.serviceName.contains("Piamonte API Server")) {
+                        isServerFound = false
+                        viewModel.clearData()
+                        runOnUiThread { showStatusMessage("El servidor se ha desconectado. Desliza para buscar de nuevo...") }
+                    }
+                }
+                override fun onDiscoveryStopped(serviceType: String) { Log.i("NSD", "Búsqueda detenida.") }
+                override fun onStartDiscoveryFailed(serviceType: String, errorCode: Int) { Log.e("NSD", "Error al iniciar búsqueda: $errorCode") }
+                override fun onStopDiscoveryFailed(serviceType: String, errorCode: Int) { Log.e("NSD", "Error al detener búsqueda: $errorCode") }
             }
         }
     }
 
-    // --- LÓGICA DE DESCUBRIMIENTO DE SERVICIOS (NSD) ---
-
-    private val discoveryListener = object : NsdManager.DiscoveryListener {
-        override fun onDiscoveryStarted(regType: String) { Log.d("NSD", "Búsqueda de servicios iniciada.") }
-
-        override fun onServiceFound(service: NsdServiceInfo) {
-            if (!isServerFound && service.serviceType.contains(SERVICE_TYPE) && service.serviceName.contains("Piamonte API Server")) {
-                Log.d("NSD", "Servidor Piamonte encontrado: ${service.serviceName}")
-                nsdManager.resolveService(service, resolveListener)
-            }
-        }
-
-        override fun onServiceLost(service: NsdServiceInfo) {
-            // Este método a veces no es fiable, por eso usamos el ping como principal.
-            // Aún así, lo mantenemos como una capa extra de detección.
-            Log.e("NSD", "Anuncio de servicio perdido: ${service.serviceName}")
-            if (isServerFound && service.serviceName.contains("Piamonte API Server")) {
-                viewModel.stopHeartbeat()
-                isServerFound = false
-                viewModel.clearData()
-                runOnUiThread {
-                    showStatusMessage("El servidor se ha desconectado. Buscando de nuevo...")
+    private fun initializeResolveListener() {
+        if (resolveListener == null) {
+            resolveListener = object : NsdManager.ResolveListener {
+                override fun onResolveFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {
+                    Log.e("NSD", "Fallo al resolver el servicio: $errorCode")
+                    isServerFound = false
+                }
+                override fun onServiceResolved(serviceInfo: NsdServiceInfo) {
+                    if (isServerFound) return
+                    isServerFound = true
+                    val hostAddress = serviceInfo.host.hostAddress
+                    val port = serviceInfo.port
+                    Log.i("NSD", "Servicio resuelto. IP: $hostAddress, Puerto: $port")
+                    RetrofitClient.updateBaseUrl(hostAddress, port)
+                    runOnUiThread { viewModel.fetchIngredientes() }
                 }
             }
-        }
-
-        override fun onDiscoveryStopped(serviceType: String) { Log.i("NSD", "Búsqueda detenida.") }
-        override fun onStartDiscoveryFailed(serviceType: String, errorCode: Int) { Log.e("NSD", "Error al iniciar búsqueda: $errorCode") }
-        override fun onStopDiscoveryFailed(serviceType: String, errorCode: Int) { Log.e("NSD", "Error al detener búsqueda: $errorCode") }
-    }
-
-    private val resolveListener = object : NsdManager.ResolveListener {
-        override fun onResolveFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {
-            Log.e("NSD", "Fallo al resolver el servicio: $errorCode")
-            isServerFound = false
-        }
-
-        override fun onServiceResolved(serviceInfo: NsdServiceInfo) {
-            if (isServerFound) return // Si ya lo encontramos, ignoramos
-            isServerFound = true
-            val hostAddress = serviceInfo.host.hostAddress
-            val port = serviceInfo.port
-            Log.i("NSD", "Servicio resuelto. IP: $hostAddress, Puerto: $port")
-
-            RetrofitClient.updateBaseUrl(hostAddress, port)
-            runOnUiThread {
-                viewModel.fetchIngredientes()
-            }
-            // No detenemos la búsqueda para poder detectar onServiceLost
         }
     }
 
     private fun discoverServices() {
         if (isServerFound) return
         showStatusMessage("Buscando servidor en la red...")
-        nsdManager.discoverServices(SERVICE_TYPE, NsdManager.PROTOCOL_DNS_SD, discoveryListener)
+        initializeDiscoveryListener()
+        nsdManager.discoverServices(SERVICE_TYPE, NsdManager.PROTOCOL_DNS_SD, discoveryListener!!)
     }
 
     private fun stopDiscovery() {
-        try {
-            nsdManager.stopServiceDiscovery(discoveryListener)
-        } catch (e: Exception) {
-            Log.e("NSD", "Error al detener la búsqueda: ${e.message}")
+        if (discoveryListener != null) {
+            try {
+                nsdManager.stopServiceDiscovery(discoveryListener)
+            } catch (e: Exception) {
+                Log.e("NSD", "Error al detener la búsqueda: ${e.message}")
+            }
+            discoveryListener = null
+            resolveListener = null
         }
     }
 
@@ -163,15 +164,15 @@ class MainActivity : AppCompatActivity() {
         if (showList) {
             recyclerView.visibility = View.VISIBLE
             statusText.visibility = View.GONE
+            progressBar.visibility = View.GONE
         } else {
             statusText.text = message
             statusText.visibility = View.VISIBLE
             recyclerView.visibility = View.GONE
+            progressBar.visibility = if (message == "Cargando...") View.VISIBLE else View.GONE
         }
-        progressBar.visibility = View.GONE
     }
 
-    // --- CICLO DE VIDA DE LA APP ---
     override fun onResume() {
         super.onResume()
         if (!isServerFound) {
@@ -184,7 +185,6 @@ class MainActivity : AppCompatActivity() {
         stopDiscovery()
     }
 
-    // --- DIÁLOGO DE EDICIÓN ---
     private fun showEditDialog(ingrediente: Ingrediente) {
         val builder = AlertDialog.Builder(this)
         builder.setTitle("Editar Cantidad de ${ingrediente.nombre}")

@@ -36,7 +36,7 @@ android {
 }
 
 dependencies {
-    // Dependencias básicas
+    // Dependencias básicas de Android
     implementation("androidx.core:core-ktx:1.12.0")
     implementation("androidx.appcompat:appcompat:1.6.1")
     implementation("com.google.android.material:material:1.11.0")
@@ -45,13 +45,16 @@ dependencies {
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
 
-    // Retrofit, Gson y ViewModel
+    // Retrofit para las llamadas a la API
     implementation("com.squareup.retrofit2:retrofit:2.9.0")
+    // Gson Converter para procesar las respuestas JSON
     implementation("com.squareup.retrofit2:converter-gson:2.9.0")
+
+    // ViewModel y LiveData para manejar datos de la UI
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.7.0")
     implementation("androidx.lifecycle:lifecycle-livedata-ktx:2.7.0")
-    implementation("androidx.cardview:cardview:1.0.0")
 
-    // --- NUEVA DEPENDENCIA AÑADIDA ---
+    // Vistas adicionales
+    implementation("androidx.cardview:cardview:1.0.0")
     implementation("androidx.swiperefreshlayout:swiperefreshlayout:1.1.0")
 }

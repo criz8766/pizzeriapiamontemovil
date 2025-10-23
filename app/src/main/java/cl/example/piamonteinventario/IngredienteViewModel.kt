@@ -1,12 +1,9 @@
 package cl.example.piamonteinventario
 
-import android.util.Log // <-- LÍNEA AÑADIDA
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 class IngredienteViewModel : ViewModel() {
@@ -14,78 +11,46 @@ class IngredienteViewModel : ViewModel() {
     private val _ingredientes = MutableLiveData<List<Ingrediente>>()
     val ingredientes: LiveData<List<Ingrediente>> = _ingredientes
 
-    private val _isLoading = MutableLiveData<Boolean>()
+    private val _isLoading = MutableLiveData<Boolean>(false)
     val isLoading: LiveData<Boolean> = _isLoading
 
     private val _error = MutableLiveData<String>()
     val error: LiveData<String> = _error
 
-    private val _serverConnectionLost = MutableLiveData<Boolean>()
-    val serverConnectionLost: LiveData<Boolean> = _serverConnectionLost
-
-    private var heartbeatJob: Job? = null
-
+    // Esta función se llama desde MainActivity una vez que se encuentra el servidor.
     fun fetchIngredientes() {
-        viewModelScope.launch {
+        // Muestra el ícono de carga solo si la lista está vacía.
+        if (_ingredientes.value.isNullOrEmpty()) {
             _isLoading.value = true
+        }
+
+        viewModelScope.launch {
             try {
                 val response = RetrofitClient.instance.getIngredientes()
                 _ingredientes.value = response
-                startHeartbeat()
             } catch (e: Exception) {
                 _error.value = "Error de conexión: ${e.message}"
-                stopHeartbeat()
             } finally {
                 _isLoading.value = false
             }
         }
     }
 
+    // Se llama cuando se edita la cantidad o se marca el checkbox "Comprar".
     fun updateIngrediente(ingrediente: Ingrediente) {
         viewModelScope.launch {
             try {
                 RetrofitClient.instance.updateIngredientes(listOf(ingrediente))
+                // Después de una actualización exitosa, recargamos la lista para ver el cambio.
                 fetchIngredientes()
             } catch (e: Exception) {
                 _error.value = "Error al actualizar: ${e.message}"
-                checkConnection()
             }
         }
     }
 
-    private fun startHeartbeat() {
-        heartbeatJob?.cancel()
-        heartbeatJob = viewModelScope.launch {
-            while (true) {
-                delay(5000)
-                checkConnection()
-            }
-        }
-    }
-
-    fun stopHeartbeat() {
-        heartbeatJob?.cancel()
-    }
-
-    private fun checkConnection() {
-        viewModelScope.launch {
-            try {
-                RetrofitClient.instance.pingServer()
-            } catch (e: Exception) {
-                Log.e("ViewModel", "Heartbeat fallido, conexión perdida.")
-                _serverConnectionLost.value = true
-                stopHeartbeat()
-            }
-        }
-    }
-
+    // Limpia los datos de la pantalla cuando se pierde la conexión.
     fun clearData() {
         _ingredientes.value = emptyList()
-        _serverConnectionLost.value = false
-    }
-
-    override fun onCleared() {
-        super.onCleared()
-        stopHeartbeat()
     }
 }

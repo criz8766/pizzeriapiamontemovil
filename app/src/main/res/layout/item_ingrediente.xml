@@ -8,26 +8,43 @@
     app:cardCornerRadius="8dp"
     app:cardElevation="2dp">
 
-    <LinearLayout
+    <RelativeLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="vertical"
         android:padding="16dp">
 
-        <TextView
-            android:id="@+id/textViewNombre"
+        <LinearLayout
+            android:id="@+id/infoLayout"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_toStartOf="@+id/checkBoxComprar"
+            android:layout_centerVertical="true"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/textViewNombre"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Nombre del Ingrediente"
+                android:textColor="@android:color/black"
+                android:textSize="18sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/textViewCantidad"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Cantidad: mucho"
+                android:textSize="16sp" />
+        </LinearLayout>
+
+        <CheckBox
+            android:id="@+id/checkBoxComprar"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Nombre del Ingrediente"
-            android:textSize="18sp"
-            android:textStyle="bold" />
+            android:layout_alignParentEnd="true"
+            android:layout_centerVertical="true"
+            android:text="Comprar" />
 
-        <TextView
-            android:id="@+id/textViewCantidad"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Cantidad: mucho"
-            android:textSize="16sp" />
-
-    </LinearLayout>
+    </RelativeLayout>
 </androidx.cardview.widget.CardView>

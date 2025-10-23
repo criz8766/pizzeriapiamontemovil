@@ -14,8 +14,7 @@ interface ApiService {
     @POST("/api/ingredientes/update")
     suspend fun updateIngredientes(@Body updates: List<Ingrediente>): Response<Unit>
 
-    // --- ¡NUEVO! ---
-    // Endpoint para comprobar si el servidor está activo
+    // Endpoint para comprobar si el servidor está activo ("ping")
     @GET("/ping")
     suspend fun pingServer(): Response<Unit>
 }
